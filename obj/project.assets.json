@@ -43,11 +43,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "A:\\Academico\\AprendizajePropio\\Programación\\Mods\\StardewValleyPlayablePianoMidi\\Playable_Piano.csproj",
+      "projectUniqueName": "A:\\Academico\\AprendizajePropio\\Programación\\Mods\\Playable Piano - Controller Edition\\Playable_Piano.csproj",
       "projectName": "Playable_Piano",
-      "projectPath": "A:\\Academico\\AprendizajePropio\\Programación\\Mods\\StardewValleyPlayablePianoMidi\\Playable_Piano.csproj",
+      "projectPath": "A:\\Academico\\AprendizajePropio\\Programación\\Mods\\Playable Piano - Controller Edition\\Playable_Piano.csproj",
       "packagesPath": "C:\\Users\\Emilio\\.nuget\\packages\\",
-      "outputPath": "A:\\Academico\\AprendizajePropio\\Programación\\Mods\\StardewValleyPlayablePianoMidi\\obj\\",
+      "outputPath": "A:\\Academico\\AprendizajePropio\\Programación\\Mods\\Playable Piano - Controller Edition\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\Emilio\\AppData\\Roaming\\NuGet\\NuGet.Config"
