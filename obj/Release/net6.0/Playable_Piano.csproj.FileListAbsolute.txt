@@ -1,0 +1,16 @@
+A:\Academico\AprendizajePropio\Programación\Mods\MiModMIDI\obj\Release\net6.0\Playable_Piano.csproj.AssemblyReference.cache
+A:\Academico\AprendizajePropio\Programación\Mods\MiModMIDI\obj\Release\net6.0\Playable_Piano.GeneratedMSBuildEditorConfig.editorconfig
+A:\Academico\AprendizajePropio\Programación\Mods\MiModMIDI\obj\Release\net6.0\Playable_Piano.AssemblyInfoInputs.cache
+A:\Academico\AprendizajePropio\Programación\Mods\MiModMIDI\obj\Release\net6.0\Playable_Piano.AssemblyInfo.cs
+A:\Academico\AprendizajePropio\Programación\Mods\MiModMIDI\obj\Release\net6.0\Playable_Piano.csproj.CoreCompileInputs.cache
+A:\Academico\AprendizajePropio\Programación\Mods\MiModMIDI\bin\Release\net6.0\Playable_Piano.deps.json
+A:\Academico\AprendizajePropio\Programación\Mods\MiModMIDI\bin\Release\net6.0\Playable_Piano.dll
+A:\Academico\AprendizajePropio\Programación\Mods\MiModMIDI\obj\Release\net6.0\Playable_Piano.dll
+A:\Academico\AprendizajePropio\Programación\Mods\StardewValleyPlayablePianoMidi\bin\Release\net6.0\Playable_Piano.deps.json
+A:\Academico\AprendizajePropio\Programación\Mods\StardewValleyPlayablePianoMidi\bin\Release\net6.0\Playable_Piano.dll
+A:\Academico\AprendizajePropio\Programación\Mods\StardewValleyPlayablePianoMidi\obj\Release\net6.0\Playable_Piano.csproj.AssemblyReference.cache
+A:\Academico\AprendizajePropio\Programación\Mods\StardewValleyPlayablePianoMidi\obj\Release\net6.0\Playable_Piano.GeneratedMSBuildEditorConfig.editorconfig
+A:\Academico\AprendizajePropio\Programación\Mods\StardewValleyPlayablePianoMidi\obj\Release\net6.0\Playable_Piano.AssemblyInfoInputs.cache
+A:\Academico\AprendizajePropio\Programación\Mods\StardewValleyPlayablePianoMidi\obj\Release\net6.0\Playable_Piano.AssemblyInfo.cs
+A:\Academico\AprendizajePropio\Programación\Mods\StardewValleyPlayablePianoMidi\obj\Release\net6.0\Playable_Piano.csproj.CoreCompileInputs.cache
+A:\Academico\AprendizajePropio\Programación\Mods\StardewValleyPlayablePianoMidi\obj\Release\net6.0\Playable_Piano.dll

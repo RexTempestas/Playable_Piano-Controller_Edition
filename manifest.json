@@ -1,0 +1,10 @@
+{
+  "Name": "Playable Piano - Controller Support",
+  "Author": "Mushroomy (Original)| Updated by RexTempestas",
+  "Version": "2.0.0",
+  "Description": "Enhanced version with full controller support. Original mod by Mushroomy.",
+  "UniqueID": "RexTempestas.PlayablePiano_Controller",
+  "EntryDll": "Playable_Piano.dll",
+  "MinimumApiVersion": "4.0.0",
+  "UpdateKeys": []
+}
