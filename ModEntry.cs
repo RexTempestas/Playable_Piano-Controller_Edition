@@ -5,6 +5,7 @@ using Playable_Piano.UI;
 using Microsoft.Xna.Framework.Audio;
 using StardewValley.Triggers;
 using StardewValley.Delegates;
+using StardewModdingAPI.Utilities;
 using System.Linq;
 
 namespace Playable_Piano
@@ -12,13 +13,27 @@ namespace Playable_Piano
     internal sealed class PlayablePiano : Mod
     {
         private BaseUI? activeMenu;
-        private ModConfig config;
-        public string sound = "Mushroomy.PlayablePiano_Piano"; 
+        private ModConfig config = null!;
+        // Local split-screen state (separate for each player on same PC)
+        internal readonly PerScreen<LocalPianoState> LocalState = new PerScreen<LocalPianoState>(() => new LocalPianoState());
+        internal readonly PerScreen<TrackPlayer?> CurrentTrackPlayer = new PerScreen<TrackPlayer?>(() => null);
+        internal readonly PerScreen<ScreenTrackPlayer?> ScreenPlayer = new PerScreen<ScreenTrackPlayer?>();
+
+        // Online multiplayer state (players on different PCs)
+        private Dictionary<long, OnlinePlayer> remotePlayers = new Dictionary<long, OnlinePlayer>();
+
+        public class LocalPianoState
+        {
+            public long? OwnerId { get; set; } = null;
+            public string? OccupiedPosition { get; set; } = null;
+            public bool IsPlaying { get; set; } = false;  
+        }
+
+        public string sound = "Mushroomy.PlayablePiano_Piano";
         public string soundLow = "Mushroomy.PlayablePiano_PianoLow";
         public string soundHigh = "Mushroomy.PlayablePiano_PianoHigh";
         public bool lowerOctaves = false;
         public bool upperOctaves = false;
-        private OnlinePlayer? onlinePlayer;
 
 
         #region public Methods
@@ -31,13 +46,15 @@ namespace Playable_Piano
             {
                 this.Monitor.Log("Could not load Instrument Data, check whether the Mods config.json exists and the file permissions. Using default config", LogLevel.Warn);
                 config = new ModConfig();
-                config.InstrumentData = new Dictionary<string, string>{{"Dark Piano", "Mushroomy.PlayablePiano_Piano"}, {"UprightPiano", "Mushroomy.PlayablePiano_Piano"}};
+                config.InstrumentData = new Dictionary<string, string> { { "Dark Piano", "Mushroomy.PlayablePiano_Piano" }, { "UprightPiano", "Mushroomy.PlayablePiano_Piano" } };
                 helper.WriteConfig<ModConfig>(config);
             }
             loadDefaultSounds();
             helper.Events.Input.ButtonPressed += this.OnButtonPressed;
             helper.Events.GameLoop.SaveLoaded += this.CPIntegration;
             helper.Events.Multiplayer.ModMessageReceived += this.receiveMessage;
+            helper.Events.Display.MenuChanged += this.OnMenuChanged;
+            helper.Events.Multiplayer.PeerDisconnected += this.OnPeerDisconnected;
             helper.ConsoleCommands.Add("reset_instrument_sounds", "resets all instruments to their initial base sound", this.reset_instrument_sounds);
         }
 
@@ -46,45 +63,67 @@ namespace Playable_Piano
             return new PianoApi(this);
         }
 
-
-        /// <summary>
-        /// sets activeMenu to the specified value. 
-        /// </summary>
-        /// <param name="newMenu"></param>
         public void setActiveMenu(BaseUI? newMenu)
         {
+            if (this.activeMenu != null && this.activeMenu != newMenu)
+            {
+                this.activeMenu.exitThisMenu();
+            }
+
             this.activeMenu = newMenu;
-            Monitor.Log($"activeMenu changed to {newMenu}");
+
             if (newMenu is not null)
             {
                 Game1.activeClickableMenu = newMenu;
+
+                // Lower music volume when entering playback UI
+                if (newMenu is PlaybackUI)
+                {
+                    Game1.musicCategory.SetVolume(0f);
+                }
+            }
+            else
+            {
+                // Menu closed - restore music volume
+                Game1.musicCategory.SetVolume(Game1.options.musicVolumeLevel);
+
+                LocalState.Value.OwnerId = null;
+                LocalState.Value.OccupiedPosition = null;
+                LocalState.Value.IsPlaying = false;
             }
         }
 
-       
-       /// <summary>
-       /// Raises the SaveLoaded Trigger to Add Content Patcher instruments to the config.
-       /// </summary>
-       /// <param name="sender"></param>
-       /// <param name="e"></param>
+        private void OnMenuChanged(object? sender, MenuChangedEventArgs e)
+        {
+            if (activeMenu != null && e.NewMenu == null)
+            {
+                activeMenu.handleButton(SButton.Escape);
+                activeMenu = null;
+
+                // Restore music volume when menu is closed externally
+                Game1.musicCategory.SetVolume(Game1.options.musicVolumeLevel);
+
+                LocalState.Value.OwnerId = null;
+                LocalState.Value.OccupiedPosition = null;
+                LocalState.Value.IsPlaying = false;
+            }
+        }
+
         public void CPIntegration(object? sender, SaveLoadedEventArgs e)
         {
-            // check the config and attempt to load sounds not loaded yet, mostly a user's custom sounds
-            // happens after the save loaded as all previously added instruments should have their sounds loaded by now
             checkConfigSounds();
             Monitor.Log("adding CP Instruments");
             TriggerActionManager.Raise("Mushroomy.PlayablePiano_SaveLoaded");
         }
 
-        /// <summary>
-        /// Adds a Content Packs instrument to the Config, but only if the sound exists.
-        /// </summary>
-        /// <param name="args"> Argument 1 is the instrument Name; Argument 2 is the soundName.</param>
-        /// <param name="context"></param>
-        /// <param name="error"></param>
-        /// <returns></returns>
         public bool addInstrument(string[] args, TriggerActionContext context, out string? error)
         {
+            if (args.Length < 3)
+            {
+                error = "Invalid arguments: expected at least 3 arguments (trigger, instrumentName, soundName)";
+                return false;
+            }
+
             string instrumentName = args[1];
             string soundName = args[2];
             if (Game1.soundBank.Exists(soundName))
@@ -111,21 +150,67 @@ namespace Playable_Piano
                 if (e.Type == "startPlayback")
                 {
                     startPlayback message = e.ReadAs<startPlayback>();
-                    onlinePlayer = new OnlinePlayer(this, message.performerTilePos, message.notation, message.sound);
-                } 
-                else if (e.Type == "stopPlayback" && onlinePlayer is not null)
+                    long playerId = message.playerId;
+
+                    if (remotePlayers.ContainsKey(playerId))
+                    {
+                        remotePlayers[playerId].stopSong();
+                        remotePlayers.Remove(playerId);
+                    }
+
+                    if (LocalState.Value.OwnerId != playerId)
+                    {
+                        LocalState.Value.OwnerId = playerId;
+                        LocalState.Value.OccupiedPosition = $"{message.performerTilePos}";
+                    }
+
+                    OnlinePlayer onlinePlayer = new OnlinePlayer(this, message.performerTilePos, message.notation, message.sound, playerId);
+                    remotePlayers.Add(playerId, onlinePlayer);
+                }
+                else if (e.Type == "stopPlayback")
                 {
-                    onlinePlayer.stopSong();
-                    onlinePlayer = null;
+                    stopPlayback message = e.ReadAs<stopPlayback>();
+                    if (remotePlayers.ContainsKey(message.playerId))
+                    {
+                        remotePlayers[message.playerId].stopSong();
+                        remotePlayers.Remove(message.playerId);
+
+                        if (LocalState.Value.OwnerId == message.playerId)
+                        {
+                            LocalState.Value.OwnerId = null;
+                            LocalState.Value.OccupiedPosition = null;
+                        }
+                    }
                 }
                 else if (e.Type == "playNote")
                 {
                     playNote message = e.ReadAs<playNote>();
-                    string receivedSound = !Game1.soundBank.Exists(message.sound) ? message.sound : "toyPiano";
-                    Game1.soundBank.GetCueDefinition(message.sound).sounds.First().pitch = (message.pitch - 1200) / 1200f;
-                    Game1.currentLocation.localSound(message.sound, message.performerTile, message.pitch);
+                    string receivedSound = Game1.soundBank.Exists(message.sound) ? message.sound : "toyPiano";
+                    Game1.soundBank.GetCueDefinition(receivedSound).sounds.First().pitch = (message.pitch - 1200) / 1200f;
+                    Game1.currentLocation.localSound(receivedSound, message.performerTile, message.pitch);
                 }
             }
+        }
+
+        public void OnScreenPlaybackFinished(long playerId)
+        {
+            Monitor.Log($"OnScreenPlaybackFinished called - PlayerId: {playerId}");
+
+            if (ScreenPlayer.Value != null)
+            {
+                ScreenPlayer.Value.Stop();
+                ScreenPlayer.Value = null;
+            }
+
+            LocalState.Value.IsPlaying = false;
+            CurrentTrackPlayer.Value = null;
+
+            // Restore music volume
+            Game1.musicCategory.SetVolume(Game1.options.musicVolumeLevel);
+
+            // Open main menu for this screen
+            MainMenu menu = new MainMenu(this);
+            setActiveMenu(menu);
         }
 
         #endregion
@@ -137,7 +222,7 @@ namespace Playable_Piano
             {
                 return;
             }
-            else if (activeMenu is not null && Game1.activeClickableMenu is not null) //activeMenu has handleButton Method, and is thus used instead of activeClickableMenu
+            else if (activeMenu is not null && Game1.activeClickableMenu is not null)
             {
                 activeMenu.handleButton(e.Button);
                 return;
@@ -153,9 +238,7 @@ namespace Playable_Piano
                     return;
                 }
             }
-            // no else if, due to the previous else if being entered, when sitting down and having an Active Item
-            // Handle sitting on piano
-            // Handle sitting on piano
+
             if (Game1.activeClickableMenu is null && Game1.player.IsSitting())
             {
                 string input = e.Button.ToString();
@@ -163,24 +246,32 @@ namespace Playable_Piano
                 // ========================================
                 // 1. LET THE GAME HANDLE STANDING UP
                 // ========================================
-                // These buttons should JUST work like vanilla (stand up naturally)
-                if (input == "MouseRight" ||                          // Right click
-                    input == "Left" || input == "Right" || input == "Up" || input == "Down" ||  // Arrow keys
+                if (input == "MouseRight" || input == "Left" || input == "Right" || input == "Up" || input == "Down" ||
                     input == "ControllerLeftThumbstickLeft" || input == "ControllerLeftThumbstickRight" ||
                     input == "ControllerLeftThumbstickUp" || input == "ControllerLeftThumbstickDown" ||
-                    e.Button == SButton.ControllerB)                  // B button
+                    e.Button == SButton.ControllerB)
                 {
-                    // Don't suppress, let the game handle it naturally
+                    long playerId = Game1.player.UniqueMultiplayerID;
+
+                    if (remotePlayers.ContainsKey(playerId))
+                    {
+                        remotePlayers[playerId].stopSong();
+                        remotePlayers.Remove(playerId);
+                    }
+
+                    if (LocalState.Value.OwnerId == playerId)
+                    {
+                        LocalState.Value.OwnerId = null;
+                        LocalState.Value.OccupiedPosition = null;
+                    }
+
                     return;
                 }
 
                 // ========================================
                 // 2. OPEN MENU with specific buttons
                 // ========================================
-                // Only these buttons open the piano menu
-                if (input == "MouseLeft" ||                          // Left click
-                    e.Button == SButton.ControllerX ||                // X button
-                    e.Button == SButton.ControllerY)                  // Y button
+                if (input == "MouseLeft" || e.Button == SButton.ControllerX || e.Button == SButton.ControllerY)
                 {
                     GameLocation location = Game1.currentLocation;
                     Farmer player = Game1.player;
@@ -197,6 +288,14 @@ namespace Playable_Piano
 
                     if (config.InstrumentData.ContainsKey(tile_name))
                     {
+                        string pianoKey = $"{location.Name}_{(int)player.Tile.X}_{(int)player.Tile.Y}";
+
+                        if (LocalState.Value.OwnerId.HasValue && LocalState.Value.OwnerId.Value != player.UniqueMultiplayerID)
+                        {
+                            Game1.addHUDMessage(new HUDMessage("Someone is already playing this piano!", 3));
+                            return;
+                        }
+
                         Helper.Input.Suppress(e.Button);
                         Monitor.Log($"Opening piano menu at {tile_name} with {e.Button}");
                         openInstrumentMenu(config.InstrumentData[tile_name]);
@@ -207,26 +306,19 @@ namespace Playable_Piano
                     }
                     return;
                 }
-
-                // ========================================
-                // 3. IGNORE everything else (A button, etc.)
-                // ========================================
-                // A button will be handled by vanilla game (stand up)
                 return;
             }
             else
             {
-                // if somehow Game1.activeClickableMenu got nulled, without activeMenu getting nulled, they get synced here
                 activeMenu = null;
             }
         }
 
-        /// <summary>
-        /// creates and opens the Mod's main Menu, additionally sets the currently used sound to the specified value
-        /// </summary>
-        /// <param name="soundName">the Sound of the instrument</param>
         public void openInstrumentMenu(string soundName)
         {
+            LocalState.Value.OwnerId = Game1.player.UniqueMultiplayerID;
+            LocalState.Value.OccupiedPosition = $"{Game1.currentLocation.Name}_{(int)Game1.player.Tile.X}_{(int)Game1.player.Tile.Y}";
+
             sound = soundName;
             soundLow = soundName + "Low";
             soundHigh = soundName + "High";
@@ -235,23 +327,17 @@ namespace Playable_Piano
             Monitor.Log($"using sound {sound}");
             Monitor.Log($"extended Pitches lower: {lowerOctaves}, higher: {upperOctaves}");
 
-            // open main Piano Menu
             MainMenu pianoMenu = new MainMenu(this);
             activeMenu = pianoMenu;
             Game1.activeClickableMenu = pianoMenu;
         }
 
-        /// <summary>
-        /// Loads a sound from the sounds folder, then creates and adds a SoundCue for it  
-        /// </summary>
-        /// <param name="soundName">The Name of the Cue and of the sound file</param>
-        /// <returns></returns>
         private bool loadSoundData(string soundName)
         {
             try
             {
                 SoundEffect audio;
-                string audioPath = Path.Combine(Helper.DirectoryPath, "assets" ,"sounds", soundName + ".wav");
+                string audioPath = Path.Combine(Helper.DirectoryPath, "assets", "sounds", soundName + ".wav");
                 using (var stream = new FileStream(audioPath, FileMode.Open))
                 {
                     audio = SoundEffect.FromStream(stream);
@@ -267,12 +353,9 @@ namespace Playable_Piano
             }
         }
 
-        /// <summary>
-        /// loads the default Sounds, which come bundled in with the mod. 
-        /// </summary>
         private void loadDefaultSounds()
         {
-            string[] defaultSounds = {"toyPianoLow", "toyPianoHigh", "fluteLow", "fluteHigh", "Mushroomy.PlayablePiano_Piano", "Mushroomy.PlayablePiano_PianoLow", "Mushroomy.PlayablePiano_PianoHigh"};
+            string[] defaultSounds = { "toyPianoLow", "toyPianoHigh", "fluteLow", "fluteHigh", "Mushroomy.PlayablePiano_Piano", "Mushroomy.PlayablePiano_PianoLow", "Mushroomy.PlayablePiano_PianoHigh" };
             foreach (string sound in defaultSounds)
             {
                 loadSoundData(sound);
@@ -280,10 +363,6 @@ namespace Playable_Piano
             }
         }
 
-        /// <summary>
-        /// checks which sounds from the config are loaded, and attempts to load missing ones from assets/sounds.
-        /// This usually only consist of Custom Sounds added by the user to override an existing sound.
-        /// </summary>
         private void checkConfigSounds()
         {
             foreach (var entry in config.InstrumentData)
@@ -323,11 +402,6 @@ namespace Playable_Piano
             }
         }
 
-        /// <summary>
-        /// sets all Instrument Sounds to the default sound specified in the corresponding Content Pack.
-        /// </summary>
-        /// <param name="command"></param>
-        /// <param name="args"></param>
         private void reset_instrument_sounds(string command, string[] args)
         {
             Monitor.Log("Reseting Trigger Action");
@@ -340,11 +414,20 @@ namespace Playable_Piano
                 }
             }
             Monitor.Log("Reseting Pianos");
-            string errorMsg = ""; // only because addInstruments requires it.
-            addInstrument(new string[] {"", "Dark Piano", "Mushroomy.PlayablePiano_Piano"}, new TriggerActionContext(), out errorMsg);
-            addInstrument(new string[] {"", "UprightPiano", "Mushroomy.PlayablePiano_Piano"}, new TriggerActionContext(), out errorMsg);
+            addInstrument(new string[] { "", "Dark Piano", "Mushroomy.PlayablePiano_Piano" }, new TriggerActionContext(), out _);
+            addInstrument(new string[] { "", "UprightPiano", "Mushroomy.PlayablePiano_Piano" }, new TriggerActionContext(), out _);
             Monitor.Log("Rerunning CP Integration");
             CPIntegration(this, new SaveLoadedEventArgs());
+        }
+
+        private void OnPeerDisconnected(object? sender, PeerDisconnectedEventArgs e)
+        {
+            if (remotePlayers.ContainsKey(e.Peer.PlayerID))
+            {
+                remotePlayers[e.Peer.PlayerID].stopSong();
+                remotePlayers.Remove(e.Peer.PlayerID);
+                Monitor.Log($"Cleaned up playback for disconnected player {e.Peer.PlayerID}", LogLevel.Debug);
+            }
         }
         #endregion
     }

@@ -1,13 +1,12 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using System.Linq;
 
 namespace Playable_Piano
 {
-    /// <summary>
-    /// Plays a MIDI Song, from another player, without UI
-    /// </summary>
     public class OnlinePlayer
     {
         private string sound;
@@ -16,10 +15,16 @@ namespace Playable_Piano
         private TrackPlayer songPlayer;
         private PlayablePiano mainMod;
         private Vector2 performerTile;
-        internal OnlinePlayer(PlayablePiano mod, Vector2 performerTilePos, List<Note> receivedNotation, string receivedSound)
+        private long playerId;
+        private int ownerScreenId;
+
+        internal OnlinePlayer(PlayablePiano mod, Vector2 performerTilePos, List<Note> receivedNotation, string receivedSound, long playerId)
         {
             mainMod = mod;
             performerTile = performerTilePos;
+            this.playerId = playerId;
+            this.ownerScreenId = Context.ScreenId;
+            
             if (Game1.soundBank.Exists(receivedSound))
             {
                 this.sound = receivedSound;
@@ -37,6 +42,14 @@ namespace Playable_Piano
 
         public void playSong(object? sender, UpdateTickingEventArgs e)
         {
+            if (Context.ScreenId != ownerScreenId)
+                return;
+                
+            if (mainMod.LocalState.Value.OwnerId != playerId)
+            {
+                return;
+            }
+
             foreach (Note playedNote in songPlayer.GetNextNote())
             {
                 if (playedNote.pitch >= 0)
@@ -55,13 +68,13 @@ namespace Playable_Piano
                     }
                     if (!Game1.soundBank.GetCue(playedSoundCue).IsPitchBeingControlledByRPC)
                     {
-                        Game1.soundBank.GetCueDefinition(playedSoundCue).sounds.First<XactSoundBankSound>().pitch = (playedNote.pitch - 1200) / 1200f;
+                        Game1.soundBank.GetCueDefinition(playedSoundCue).sounds.First().pitch = (playedNote.pitch - 1200) / 1200f;
                     }
                     Game1.currentLocation.localSound(playedSoundCue, performerTile, playedNote.pitch);
                 }
                 else
                 {
-                    mainMod.Monitor.Log("playBack finished");
+                    mainMod.Monitor.Log($"playBack finished for player {playerId}");
                     mainMod.Helper.Events.GameLoop.UpdateTicking -= playSong;
                     Game1.musicCategory.SetVolume(Game1.options.musicVolumeLevel);
                 }
@@ -70,9 +83,11 @@ namespace Playable_Piano
 
         public void stopSong()
         {
-            mainMod.Monitor.Log("playBack stopped");
+            mainMod.Monitor.Log($"playBack stopped for player {playerId}");
             mainMod.Helper.Events.GameLoop.UpdateTicking -= playSong;
             Game1.musicCategory.SetVolume(Game1.options.musicVolumeLevel);
         }
+        
+        public bool IsFromPlayer(long id) => playerId == id;
     }
 }

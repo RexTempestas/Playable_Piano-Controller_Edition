@@ -7,5 +7,10 @@ namespace Playable_Piano.UI
     {
         protected abstract PlayablePiano mainMod { get; set; }
         public abstract void handleButton(SButton button);
+        
+        protected override void cleanupBeforeExit()
+        {
+            base.cleanupBeforeExit();
+        }
     }
 }

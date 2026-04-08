@@ -14,7 +14,7 @@ namespace Playable_Piano
             this.midiFile = midiFile;
             this.mainTrackNumber = mainTrackNumber;
             TicksPerQuarterNote = midiFile.TicksPerQuarterNote == 0 ? 24 : midiFile.TicksPerQuarterNote; // standard value
-            mainMod.Monitor.Log($"Converter: Ticks per quarter Note: {midiFile.TicksPerQuarterNote}");
+            mainMod.Monitor.Log($"Converter: Ticks per quarter Note: {midiFile.TicksPerQuarterNote}", LogLevel.Debug);
             this.mainMod = mainMod;
         }
 
@@ -30,9 +30,9 @@ namespace Playable_Piano
                 {
                     if (midiEvent.MetaEventType == MetaEventType.Tempo)
                     {
-                        mainMod.Monitor.Log($"Converter: BPM changes to {midiEvent.Arg2} at midi Tick {midiEvent.Time}");
+                        mainMod.Monitor.Log($"Converter: BPM changes to {midiEvent.Arg2} at midi Tick {midiEvent.Time}", LogLevel.Debug);
                         BPMIntervals.Add((midiEvent.Time, calculateTickRatio(midiEvent.Arg2)));
-                        mainMod.Monitor.Log($"Converter: New TickRatio: {BPMIntervals[0].Item2}");
+                        mainMod.Monitor.Log($"Converter: New TickRatio: {BPMIntervals[0].Item2}", LogLevel.Debug);
                     }
                 }
             }

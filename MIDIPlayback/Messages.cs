@@ -5,30 +5,40 @@ namespace Playable_Piano
     internal class startPlayback
     {
         public Vector2 performerTilePos;
-        public List<Note> notation;
-        public string sound;
+        public List<Note> notation = new List<Note>();
+        public string sound = string.Empty;
+        public long playerId;
 
         internal startPlayback() { }
 
-        internal startPlayback(Vector2 performerTile, List<Note> notationToSend, string soundName)
+        internal startPlayback(Vector2 performerTile, List<Note> notationToSend, string soundName, long playerId)
         {
             performerTilePos = performerTile;
             notation = notationToSend;
             sound = soundName;
+            this.playerId = playerId;
         }
     }
+    
     internal class stopPlayback
     {
-        internal stopPlayback(){ }
+        public long playerId;
+        
+        internal stopPlayback() { }
+        
+        internal stopPlayback(long playerId)
+        {
+            this.playerId = playerId;
+        }
     }
 
     internal class playNote
     {
-        public string sound;
+        public string sound = string.Empty;
         public int pitch;
         public Vector2 performerTile;
 
-        playNote() {}
+        internal playNote() {}
 
         internal playNote(string soundName, int playedPitch, Vector2 tile)
         {
@@ -36,6 +46,5 @@ namespace Playable_Piano
             pitch = playedPitch;
             performerTile = tile;
         }
-        
     }
 }
